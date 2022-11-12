@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -90,7 +90,7 @@ func (r *routine) run(ctx context.Context, appender *csv.Writer, urlStr string) 
 	}
 	defer res.Body.Close()
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return fmt.Errorf("reading response: %w", err)
 	}
