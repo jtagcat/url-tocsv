@@ -1,112 +1,111 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"fmt"
-	"io/fs"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"strconv"
 	"time"
 
-	"github.com/gogs/git-module"
-	"github.com/jtagcat/simple"
-	"github.com/jtagcat/spotify-togit/pkg"
+	"github.com/jtagcat/util"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-var (
-	modePerm      = fs.FileMode(0o660)
-	committerName = "url-togit"
-)
-
-func repoInit() (repo *git.Repository) {
-	// open repo
-	gitDir := os.Getenv("GITDIR")
-	if gitDir == "" {
-		log.Fatal("GITDIR not set")
-	}
-	gitDir, err := pkg.PathResolveTilde(gitDir)
-	if err != nil {
-		log.Fatal(fmt.Errorf("couldn't resolve path for GITDIR: %v", err))
-	}
-	repo, _, err = pkg.GitOpenOrInit(gitDir)
-	if err != nil {
-		log.Fatal(fmt.Errorf("error opening git dir: %w", err))
-	}
-
-	return repo
-}
-
-type mainCtx struct {
-	ctx      context.Context
-	r        *git.Repository
-	urlStr   string
-	fileName string
-}
-
 func main() {
-	ctx := context.Background()
-	r := repoInit()
-	urlStr := os.Getenv("URL")
-	_, err := url.ParseRequestURI(urlStr)
-	if err != nil {
-		log.Fatal(fmt.Errorf("couldn't parse URL: %v", err))
-	}
-	fileName := os.Getenv("FILENAME")
-	if fileName == "" || fileName == ".git" {
-		log.Fatal(fmt.Errorf("FILENAME must not be empty or \".git\""))
-	}
-	mc := mainCtx{ctx, r, urlStr, fileName}
+	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt)
 
-	periodRaw := os.Getenv("PERIOD")
-	periodInt, err := strconv.Atoi(periodRaw)
-	if err != nil {
-		log.Fatal(fmt.Errorf("couldn't parse PERIOD: %v", err))
+	dir, ok := os.LookupEnv("OUTDIR")
+	if !ok {
+		log.Fatal("OUTDIR not set")
 	}
-	period := time.Duration(periodInt) * time.Minute
 
-	for period != 0 {
-		err := routine(mc)
+	urlStr, ok := os.LookupEnv("URL")
+	if !ok {
+		log.Fatal("URL not set")
+	}
+
+	period, err := time.ParseDuration(os.Getenv("PERIOD"))
+	if err != nil {
+		log.Fatalf("parsing PERIOD: %e", err)
+	}
+
+	jitterStr, ok := os.LookupEnv("JITTER")
+	if !ok {
+		jitterStr = "0.2"
+	}
+	jitter, err := strconv.ParseFloat(jitterStr, 64)
+	if err != nil {
+		log.Fatalf("parsing JITTER: %e", err)
+	}
+
+	rolling := util.NewRollingCsvAppender(func() string {
+		return filepath.Join(dir, time.Now().UTC().Format("2006-01-02")+".csv")
+	}, 0o660)
+	defer rolling.Close()
+
+	if err := rolling.WriteCurrent([]string{
+		time.Now().UTC().Format(time.RFC3339),
+		fmt.Sprintf("started url-tocsv for %s", urlStr),
+	}); err != nil {
+		log.Fatalf("writing startup string: %e", err)
+	}
+
+	var r routine
+	wait.JitterUntilWithContext(ctx, func(ctx context.Context) {
+		w, err, _ := rolling.Current()
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("opening current file: %e", err)
 		}
-		time.Sleep(period)
-	}
+
+		if err := r.run(ctx, w, urlStr); err != nil {
+			log.Printf("routine unsuccessful: %e", err)
+		}
+	},
+		period, jitter, false)
 }
 
-func routine(mc mainCtx) error {
-	var Body []byte
+type routine struct {
+	lastSet bool
+	last    []byte
+}
 
-	err := simple.RetryOnError(wait.Backoff{
-		Duration: 3 * time.Second,
-		Factor:   2,
-		Jitter:   1,
-		Steps:    3,
-	}, func() (bool, error) {
-		res, err := http.Get(mc.urlStr)
-		if err != nil {
-			return true, err
-		}
-		if res.StatusCode > 299 {
-			return true, fmt.Errorf("Non-OK status code: %s", res.Status)
-		}
-		defer res.Body.Close()
+func (r *routine) run(ctx context.Context, appender *csv.Writer, urlStr string) error {
+	res, err := http.Get(urlStr)
+	if err != nil {
+		return fmt.Errorf("request to url: %w", err)
+	}
+	if res.StatusCode > 299 {
+		return fmt.Errorf("response has non-ok status: %s", res.Status)
+	}
+	defer res.Body.Close()
 
-		Body, err = ioutil.ReadAll(res.Body)
-		return true, err
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return fmt.Errorf("reading response: %w", err)
+	}
+
+	if r.lastSet && bytes.Equal(body, r.last) {
+		return nil
+	}
+	r.lastSet = true
+	r.last = body
+
+	// squash multi-line body
+	body = bytes.ReplaceAll(body, []byte("\\n"), []byte("\\\n")) // text '\n' to '\\n'
+	body = bytes.ReplaceAll(body, []byte("\n"), []byte("\\n"))
+
+	err = appender.Write([]string{
+		time.Now().UTC().Format(time.RFC3339),
+		string(body),
 	})
-	if err != nil {
-		return err
-	}
 
-	err = pkg.GitWriteAdd(mc.r, mc.fileName, Body, modePerm)
-	if err != nil {
-		return err
-	}
-
-	return mc.r.Commit(&git.Signature{Name: committerName, Email: "", When: time.Now()}, "routine run")
+	appender.Flush()
+	return err
 }

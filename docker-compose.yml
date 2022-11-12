@@ -1,12 +1,10 @@
 services:
-  url-togit:
-    image: url-togit:build
-    build: https://github.com/jtagcat/url-togit#main
+  url-tocsv:
+    image: url-tocsv:build
+    build: https://github.com/jtagcat/url-tocsv#main
     volumes:
       - ./xyz:/wd/data
     environment:
       - URL=https://services.postimees.ee/radio/v1/elmar
-      - FILENAME=elmarCurrentlyPlaying.json
-      - GITDIR=/wd/data
-      - PERIOD=1440
+      - PERIOD=20s
     restart: unless-stopped
