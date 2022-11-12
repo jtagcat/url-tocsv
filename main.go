@@ -52,7 +52,7 @@ func main() {
 
 	if err := rolling.WriteCurrent([]string{
 		time.Now().UTC().Format(time.RFC3339),
-		fmt.Sprintf("started url-tocsv for %s", urlStr),
+		fmt.Sprintf("#LOG: started url-tocsv for %s", urlStr),
 	}); err != nil {
 		log.Fatalf("writing startup string: %e", err)
 	}
@@ -66,6 +66,10 @@ func main() {
 
 		if err := r.run(ctx, w, urlStr); err != nil {
 			log.Printf("routine unsuccessful: %e", err)
+			_ = w.Write([]string{
+				time.Now().UTC().Format(time.RFC3339),
+				fmt.Sprintf("#LOG: failed getting %s", urlStr),
+			})
 		}
 	},
 		period, jitter, false)
