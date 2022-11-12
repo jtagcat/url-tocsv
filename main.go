@@ -101,10 +101,6 @@ func (r *routine) run(ctx context.Context, appender *csv.Writer, urlStr string) 
 	r.lastSet = true
 	r.last = body
 
-	// squash multi-line body
-	body = bytes.ReplaceAll(body, []byte("\\n"), []byte("\\\n")) // text '\n' to '\\n'
-	body = bytes.ReplaceAll(body, []byte("\n"), []byte("\\n"))
-
 	err = appender.Write([]string{
 		time.Now().UTC().Format(time.RFC3339),
 		string(body),
