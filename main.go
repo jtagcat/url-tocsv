@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jtagcat/util"
+	rolling "github.com/jtagcat/util/rolling_file"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -45,7 +45,7 @@ func main() {
 		log.Fatalf("parsing JITTER: %e", err)
 	}
 
-	rolling := util.NewRollingCsvAppender(func() string {
+	rolling := rolling.NewCsvAppender(func() string {
 		return filepath.Join(dir, time.Now().UTC().Format("2006-01-02")+".csv")
 	}, 0o660)
 	defer rolling.Close()
