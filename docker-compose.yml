@@ -1,7 +1,7 @@
 services:
   url-tocsv:
     image: url-tocsv:build
-    build: https://github.com/jtagcat/url-tocsv#main
+    build: https://github.com/jtagcat/url-tocsv.git#main
     volumes:
       - ./xyz:/wd/data
     environment:
