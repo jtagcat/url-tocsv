@@ -1,16 +1,14 @@
 module github.com/jtagcat/url-tocsv
 
-go 1.23.0
-
-toolchain go1.23.4
+go 1.25.0
 
 require (
-	github.com/jtagcat/util v0.0.0-20241219025147-e1b0d09e4131
-	k8s.io/apimachinery v0.32.0
+	github.com/jtagcat/util v0.0.0-20251006210414-3eb88bfdb84e
+	k8s.io/apimachinery v0.35.0
 )
 
 require (
-	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
-	k8s.io/utils v0.0.0-20241210054802-24370beab758 // indirect
+	k8s.io/utils v0.0.0-20260108192941-914a6e750570 // indirect
 )
